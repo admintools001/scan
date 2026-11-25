@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>即時掃碼 → 「掃碼」工作頁 v1.3</title>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      text-align: center;
+      padding: 16px;
+      margin: 0;
+      background: #f5f7fa;
+      color: #202124;
+    }
+    h3 {
+      margin: 8px 0 12px;
+      font-size: 18px;
+    }
+    h3 small {
+      font-size: 13px;
+      font-weight: 600;
+      color: #1a73e8;
+      background: #e8f0fe;
+      padding: 2px 7px;
+      border-radius: 999px;
+      vertical-align: middle;
+    }
+    .cam-box {
+      position: relative;
+      width: 100%;
+      max-width: 400px;
+      height: 260px;
+      margin: 0 auto;
+      border-radius: 10px;
+      overflow: hidden;
+      background: #000;
+    }
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    canvas {
+      display: none;
+    }
+    .card {
+      max-width: 400px;
+      margin: 14px auto 0;
+      padding: 12px;
+      background: #fff;
+      border: 1px solid #dadce0;
+      border-radius: 8px;
+      text-align: left;
+      font-size: 14px;
+      line-height: 1.5;
+      word-break: break-all;
+    }
+    .label {
+      font-size: 12px;
+      color: #5f6368;
+      margin-bottom: 4px;
+    }
+    button {
+      margin-top: 14px;
+      padding: 11px 22px;
+      font-size: 16px;
+      border: none;
+      border-radius: 8px;
+      background: #1a73e8;
+      color: #fff;
+      cursor: pointer;
+    }
+    button:disabled {
+      background: #9ec1f5;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+
+  <h3>即時掃碼 → 「掃碼」工作頁 <small>v1.3</small></h3>
+
+  <div class="cam-box">
+    <video id="camVideo" playsinline autoplay muted></video>
+    <canvas id="scanCanvas"></canvas>
+  </div>
+
+  <div class="card">
+    <div class="label">目前狀態</div>
+    <div id="statusText">正在啟動後置鏡頭...</div>
+  </div>
+
+  <div class="card">
+    <div class="label">最近解碼內容</div>
+    <div id="decodedText">尚未掃描</div>
+  </div>
+
+  <button id="rescanBtn" type="button" style="display:none;" onclick="startScanLoop()">重新掃描</button>
+
+  <script>
+    const GAS_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbz1QPvI9ik-xDUKntAV9pYVnm5I0JERCmTrdx0MXRDBiaOgH_zO96re1Lu_aO7lx7xj/exec';
+
+    const videoEl = document.getElementById('camVideo');
+    const canvasEl = document.getElementById('scanCanvas');
+    const ctx = canvasEl.getContext('2d', { willReadFrequently: true });
+
+    let mediaStream = null;
+    let rafId = null;
+    let isScanning = false;
+    let isSending = false;
+
+    function setStatus(msg) {
+      document.getElementById('statusText').innerText = msg;
+    }
+
+    function setDecoded(text) {
+      document.getElementById('decodedText').innerText = text;
+    }
+
+    function setRescanVisible(visible, disabled = false) {
+      const btn = document.getElementById('rescanBtn');
+      btn.style.display = visible ? 'inline-block' : 'none';
+      btn.disabled = disabled;
+    }
+
+    function getDeviceInfo() {
+      const ua = navigator.userAgent || '';
+      if (/iPhone|iPad|iPod/i.test(ua)) return 'iOS';
+      if (/Android/i.test(ua)) return 'Android';
+      return 'Other';
+    }
+
+    function stopScanLoop() {
+      isScanning = false;
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+    }
+
+    function stopCameraStream() {
+      stopScanLoop();
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(track => track.stop());
+        mediaStream = null;
+      }
+      videoEl.srcObject = null;
+    }
+
+    async function initCamera() {
+      stopCameraStream();
+      setRescanVisible(false);
+      setStatus('正在請求相機權限並啟動後置鏡頭...');
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setStatus('此瀏覽器不支援相機串流');
+        setRescanVisible(true, false);
+        return;
+      }
+
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+          audio: false
+        });
+      } catch (err) {
+        try {
+          mediaStream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false
+          });
+        } catch (fallbackErr) {
+          setStatus('無法啟動鏡頭：' + (fallbackErr.name || 'Error') + ' - ' + (fallbackErr.message || fallbackErr));
+          setRescanVisible(true, false);
+          return;
+        }
+      }
+
+      videoEl.srcObject = mediaStream;
+      await videoEl.play();
+      startScanLoop();
+    }
+
+    function startScanLoop() {
+      if (isSending) return;
+      stopScanLoop();
+      isScanning = true;
+      setRescanVisible(false);
+      setStatus('鏡頭已啟動，請對準 QR Code');
+
+      const tick = () => {
+        if (!isScanning || isSending) return;
+
+        if (videoEl.readyState === videoEl.HAVE_ENOUGH_DATA && videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
+          canvasEl.width = videoEl.videoWidth;
+          canvasEl.height = videoEl.videoHeight;
+          ctx.drawImage(videoEl, 0, 0, canvasEl.width, canvasEl.height);
+
+          const imageData = ctx.getImageData(0, 0, canvasEl.width, canvasEl.height);
+          const code = jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: 'attemptBoth'
+          });
+
+          if (code && code.data) {
+            handleDecoded(code.data);
+            return;
+          }
+        }
+
+        rafId = requestAnimationFrame(tick);
+      };
+
+      rafId = requestAnimationFrame(tick);
+    }
+
+    async function handleDecoded(decodedText) {
+      if (isSending) return;
+      isSending = true;
+      stopScanLoop();
+
+      setDecoded(decodedText);
+      setStatus('掃描成功，正在傳送至 GAS 寫入「掃碼」工作頁...');
+
+      try {
+        await fetch(GAS_WEB_APP_URL, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            decodedText: decodedText,
+            deviceInfo: getDeviceInfo()
+          })
+        });
+        setStatus('已送出資料，請至「掃碼」工作頁確認是否新增一列');
+      } catch (err) {
+        setStatus('傳送失敗：' + (err && err.message ? err.message : err));
+      } finally {
+        isSending = false;
+        setRescanVisible(true, false);
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', initCamera);
+    window.addEventListener('beforeunload', stopCameraStream);
+  </script>
+</body>
+</html>
