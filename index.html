@@ -129,6 +129,20 @@
       opacity: 0.65;
       cursor: not-allowed;
     }
+    .btn-rescan {
+      width: 100%;
+      max-width: 400px;
+      margin: 12px auto 0;
+      padding: 12px 10px;
+      font-size: 16px;
+      font-weight: bold;
+      border: none;
+      border-radius: 8px;
+      background-color: #dc3545;
+      color: #ffffff;
+      cursor: pointer;
+    }
+
 
 
 
@@ -161,7 +175,8 @@
     <button id="confirmSendBtn" type="button" class="btn-confirm-send" onclick="confirmAndSendToGas()" disabled>確認送出</button>
   </div>
 
-  <button id="rescanBtn" type="button" style="display:none;" onclick="initCamera()">重新掃描</button>
+  <button id="rescanBtn" type="button" class="btn-rescan" style="display:none;" onclick="initCamera()">重新掃描</button>
+
 
 
 
