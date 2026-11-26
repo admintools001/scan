@@ -45,15 +45,18 @@
       overflow: hidden;
       background: #000;
     }
-    video {
+    video, canvas {
       width: 100%;
       height: 100%;
       object-fit: cover;
+    }
+    video {
       display: block;
     }
     canvas {
       display: none;
     }
+
     .card {
       max-width: 400px;
       margin: 14px auto 0;
@@ -200,8 +203,20 @@
     }
 
     function setDecoded(text) {
-      document.getElementById('decodedText').innerText = text;
+      const el = document.getElementById('decodedText');
+      if (!el) return;
+      el.innerText = text;
+      if (text && text !== '尚未掃描') {
+        el.style.setProperty('color', '#dc3545', 'important');
+        el.style.setProperty('font-size', '20px', 'important');
+        el.style.setProperty('font-weight', '900', 'important');
+      } else {
+        el.style.setProperty('color', '#202124', 'important');
+        el.style.setProperty('font-size', '14px', 'important');
+        el.style.setProperty('font-weight', 'normal', 'important');
+      }
     }
+
 
     function setRescanVisible(visible, disabled = false) {
       const btn = document.getElementById('rescanBtn');
@@ -224,8 +239,15 @@
       }
     }
 
-    function stopCameraStream() {
+    function stopCameraStream(keepFrozenFrame) {
       stopScanLoop();
+      if (keepFrozenFrame && canvasEl && canvasEl.width > 0) {
+        canvasEl.style.display = 'block';
+        videoEl.style.display = 'none';
+      } else {
+        if (canvasEl) canvasEl.style.display = 'none';
+        if (videoEl) videoEl.style.display = 'block';
+      }
       if (mediaStream) {
         mediaStream.getTracks().forEach(track => track.stop());
         mediaStream = null;
@@ -234,12 +256,13 @@
     }
 
     async function initCamera() {
-      stopCameraStream();
+      stopCameraStream(false);
       pendingDecodedText = '';
       setConfirmBtnEnabled(false);
-      setDecoded('尚未掃描');
+      setDecoded('尚未掃描', false);
       setRescanVisible(false);
       setStatus('正在請求相機權限並啟動後置鏡頭...');
+
 
 
 
@@ -307,15 +330,16 @@
 
     function handleDecoded(decodedText) {
       if (isSending) return;
-      stopCameraStream();
+      stopCameraStream(true);
 
       const cleanText = String(decodedText || '').trim();
       pendingDecodedText = cleanText;
-      setDecoded(cleanText);
+      setDecoded(cleanText, true);
       setStatus('掃描解析完成！請核對上方內容後按下「確認送出」');
       setConfirmBtnEnabled(true);
       setRescanVisible(true, false);
     }
+
 
     function confirmAndSendToGas() {
       if (isSending || !pendingDecodedText) return;
