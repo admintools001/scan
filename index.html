@@ -71,6 +71,7 @@
       color: #5f6368;
       margin-bottom: 4px;
     }
+    
     button {
       margin-top: 14px;
       padding: 11px 22px;
@@ -82,9 +83,55 @@
       cursor: pointer;
     }
     button:disabled {
-      background: #9ec1f5;
+      background: #6c757d;
+      opacity: 0.65;
       cursor: not-allowed;
     }
+    .action-btn-row {
+      max-width: 400px;
+      margin: 16px auto 0;
+      display: flex;
+      flex-direction: row;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+    .btn-cancel-scan {
+      flex: 1;
+      margin-top: 0;
+      padding: 12px 10px;
+      font-size: 16px;
+      font-weight: bold;
+      border: none;
+      border-radius: 8px;
+      background-color: #198754;
+      color: #ffffff;
+      cursor: pointer;
+    }
+    .btn-confirm-send {
+      flex: 1;
+      margin-top: 0;
+      padding: 12px 10px;
+      font-size: 16px;
+      font-weight: bold;
+      border: none;
+      border-radius: 8px;
+      background-color: #0d6efd;
+      color: #ffffff;
+      cursor: pointer;
+    }
+    .btn-confirm-send:disabled {
+      background-color: #6c757d;
+      color: #ffffff;
+      opacity: 0.65;
+      cursor: not-allowed;
+    }
+
+
+
+
+
+
   </style>
 </head>
 <body>
@@ -101,12 +148,18 @@
     <div id="statusText">正在啟動後置鏡頭...</div>
   </div>
 
-  <div class="card">
+   <div class="card">
     <div class="label">最近解碼內容</div>
     <div id="decodedText">尚未掃描</div>
   </div>
 
-  <button id="rescanBtn" type="button" style="display:none;" onclick="initCamera()">重新掃描</button>
+  <div class="action-btn-row">
+    <button id="cancelScanBtn" type="button" class="btn-cancel-scan" onclick="cancelAndReturnPrev()">取消掃碼</button>
+    <button id="confirmSendBtn" type="button" class="btn-confirm-send" onclick="confirmAndSendToGas()" disabled>確認送出</button>
+  </div>
+
+  <!--<button id="rescanBtn" type="button" style="display:none;" onclick="initCamera()">重新掃描</button>-->
+
 
 
   <script>
@@ -122,10 +175,25 @@
     const canvasEl = document.getElementById('scanCanvas');
     const ctx = canvasEl.getContext('2d', { willReadFrequently: true });
 
+
+
     let mediaStream = null;
     let rafId = null;
     let isScanning = false;
     let isSending = false;
+    let pendingDecodedText = '';
+
+    function setConfirmBtnEnabled(enabled) {
+      const btn = document.getElementById('confirmSendBtn');
+      if (btn) {
+        btn.disabled = !enabled;
+      }
+    }
+
+
+
+
+
 
     function setStatus(msg) {
       document.getElementById('statusText').innerText = msg;
@@ -167,8 +235,14 @@
 
     async function initCamera() {
       stopCameraStream();
+      pendingDecodedText = '';
+      setConfirmBtnEnabled(false);
+      setDecoded('尚未掃描');
       setRescanVisible(false);
       setStatus('正在請求相機權限並啟動後置鏡頭...');
+
+
+
 
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         setStatus('此瀏覽器不支援相機串流');
@@ -233,37 +307,69 @@
 
     function handleDecoded(decodedText) {
       if (isSending) return;
-      isSending = true;
       stopCameraStream();
 
       const cleanText = String(decodedText || '').trim();
+      pendingDecodedText = cleanText;
       setDecoded(cleanText);
-      setStatus('掃描成功！已傳回主系統核對中...');
+      setStatus('掃描解析完成！請核對上方內容後按下「確認送出」');
+      setConfirmBtnEnabled(true);
+      setRescanVisible(true, false);
+    }
 
-           try {
+    function confirmAndSendToGas() {
+      if (isSending || !pendingDecodedText) return;
+      isSending = true;
+      setConfirmBtnEnabled(false);
+
+      const textToSend = pendingDecodedText;
+      pendingDecodedText = '';
+
+      try {
         const targetWin = window.opener || (window.parent !== window ? window.parent : null);
         if (targetWin) {
           targetWin.postMessage({
             type: 'QR_SCAN_RESULT',
-            decodedText: cleanText,
+            decodedText: textToSend,
             deviceInfo: getDeviceInfo()
           }, '*');
-          setStatus('掃描成功！已傳回主系統，視窗即將關閉...');
-          setTimeout(function() { window.close(); }, 300);
+          setStatus('資料已送出至主系統，視窗即將關閉...');
+          setTimeout(function() {
+            window.close();
+          }, 300);
         } else {
-          setStatus('掃描成功，但找不到主系統視窗，請手動返回原分頁');
+          setStatus('找不到主系統視窗，請手動切回原分頁');
+          isSending = false;
         }
       } catch (err) {
         setStatus('傳回主系統失敗：' + (err && err.message ? err.message : err));
-      } finally {
         isSending = false;
-        setRescanVisible(true, false);
       }
- 
-
-
-
     }
+
+    function cancelAndReturnPrev() {
+      stopCameraStream();
+      pendingDecodedText = '';
+      isSending = false;
+      setConfirmBtnEnabled(false);
+      setDecoded('尚未掃描');
+      setStatus('已取消掃碼，正在返回上一畫面...');
+
+      if (window.opener && !window.opener.closed) {
+        try {
+          window.opener.focus();
+        } catch (e) {}
+        window.close();
+      } else if (window.history.length > 1) {
+        window.history.back();
+      } else {
+        window.close();
+      }
+    }
+
+
+
+
 
     window.addEventListener('message', function(event) {
       if (!event || !event.data) return;
