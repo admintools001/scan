@@ -240,13 +240,18 @@
       setDecoded(cleanText);
       setStatus('掃描成功！已傳回主系統核對中...');
 
-      try {
-        if (window.parent && window.parent !== window) {
-          window.parent.postMessage({
+           try {
+        const targetWin = window.opener || (window.parent !== window ? window.parent : null);
+        if (targetWin) {
+          targetWin.postMessage({
             type: 'QR_SCAN_RESULT',
             decodedText: cleanText,
             deviceInfo: getDeviceInfo()
           }, '*');
+          setStatus('掃描成功！已傳回主系統，視窗即將關閉...');
+          setTimeout(function() { window.close(); }, 300);
+        } else {
+          setStatus('掃描成功，但找不到主系統視窗，請手動返回原分頁');
         }
       } catch (err) {
         setStatus('傳回主系統失敗：' + (err && err.message ? err.message : err));
@@ -254,6 +259,10 @@
         isSending = false;
         setRescanVisible(true, false);
       }
+ 
+
+
+
     }
 
     window.addEventListener('message', function(event) {
