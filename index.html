@@ -449,18 +449,17 @@
 
         if (event.data.found) {
           statusEl.innerHTML =
-            '<div style="font-weight:bold; color:#198754; margin-bottom:2px;">✅ 掃描解析完成(請核對[確認送出]或[重新掃描]）：</div>' +
+            '<div style="font-weight:bold; color:#198754; margin-bottom:2px;">✅ 掃描解析完成(請核對後[確認送出]或[重新掃描]）：</div>' +
             '<div style="font-size:14px; font-weight:bold; color:#202124;">' +
               '分類：<span style="color:#0d6efd;">' + event.data.category + '</span> ｜ ' +
-              '名稱：<span style="color:#0d6efd;">' + event.data.name + '</span> ｜ ' +
-              '編號：<span style="color:#0d6efd;">' + event.data.toolId + '</span>' +
+              '<br>名稱：<span style="color:#0d6efd;">' + event.data.name + '</span> ｜ ' +
+              '<br>編號：<span style="color:#0d6efd;">' + event.data.toolId + '</span>' +
             '</div>';
         } else {
           statusEl.innerHTML = '<span style="color:#dc3545; font-weight:bold;">⚠️ 查無此工具資料（非本系統 QR-CODE），請按「重新掃描」</span>';
         }
       }
     });
-
 
     window.addEventListener('DOMContentLoaded', initCamera);
     window.addEventListener('beforeunload', stopCameraStream);
